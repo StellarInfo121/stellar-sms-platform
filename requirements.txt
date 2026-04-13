@@ -1,0 +1,7 @@
+flask==3.1.0
+flask-cors==5.0.1
+flask-sqlalchemy==3.1.1
+twilio==9.4.0
+signalwire==2.0.4
+python-dotenv==1.1.0
+gunicorn==23.0.0

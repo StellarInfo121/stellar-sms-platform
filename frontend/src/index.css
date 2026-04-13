@@ -1,0 +1,49 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --deep-purple: #281B39;
+  --medium-purple: #9B7FBF;
+  --light-purple: #C4A8E0;
+  --bg-primary: #1a1225;
+  --bg-secondary: #221833;
+  --bg-card: #2a1e3d;
+  --bg-input: #1e1530;
+  --border-color: #3d2d56;
+  --text-primary: #f0e8f8;
+  --text-secondary: #a89bbe;
+  --text-muted: #7a6b8f;
+  --success: #4ade80;
+  --error: #f87171;
+  --warning: #fbbf24;
+  --info: #60a5fa;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+#root {
+  display: flex;
+  min-height: 100vh;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+input, select, textarea {
+  font-family: inherit;
+}
+
+a {
+  color: var(--light-purple);
+  text-decoration: none;
+}
