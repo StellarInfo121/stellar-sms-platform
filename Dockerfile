@@ -7,9 +7,20 @@ RUN npm run build
 
 FROM python:3.12-slim
 WORKDIR /app
+
+# Install system deps that signalwire/twilio C extensions may need
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
+
+# Copy application code FIRST, then overlay the built frontend on top
 COPY . .
+COPY --from=frontend-build /app/frontend/dist ./frontend/dist
+
+ENV PORT=8080
 EXPOSE 8080
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:8080"]
+CMD gunicorn app:app --bind 0.0.0.0:$PORT
