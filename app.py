@@ -5,11 +5,13 @@ import threading
 import time
 from datetime import datetime, timezone
 
+import requests as http_requests
+from requests.auth import HTTPBasicAuth
+
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from twilio.rest import Client as TwilioClient
-from signalwire.rest import Client as SignalWireClient
 
 from models import db, Setting, Contact, Conversation, Message, Campaign, BlastMessage
 
@@ -34,7 +36,6 @@ SW_SPACE = os.getenv('SIGNALWIRE_SPACE_URL')
 SW_PHONE = os.getenv('SIGNALWIRE_PHONE_NUMBER')
 
 tw_client = TwilioClient(TWILIO_SID, TWILIO_TOKEN)
-sw_client = SignalWireClient(SW_PROJECT, SW_TOKEN, signalwire_space_url=SW_SPACE)
 
 
 def get_active_provider():
@@ -42,14 +43,26 @@ def get_active_provider():
     return s.value if s else 'twilio'
 
 
+def send_signalwire_sms(to, body, from_number):
+    url = f"https://{SW_SPACE}/api/laml/2010-04-01/Accounts/{SW_PROJECT}/Messages.json"
+    data = {"To": to, "From": from_number, "Body": body}
+    auth = HTTPBasicAuth(SW_PROJECT, SW_TOKEN)
+    response = http_requests.post(url, data=data, auth=auth)
+    result = response.json()
+    if response.status_code >= 400:
+        raise Exception(result.get('message', f'SignalWire error {response.status_code}'))
+    return result.get('sid', '')
+
+
 def send_sms(to, body, provider=None):
     if provider is None:
         provider = get_active_provider()
     if provider == 'signalwire':
-        msg = sw_client.messages.create(to=to, from_=SW_PHONE, body=body)
+        sid = send_signalwire_sms(to, body, SW_PHONE)
     else:
         msg = tw_client.messages.create(to=to, from_=TWILIO_PHONE, body=body)
-    return msg.sid, provider
+        sid = msg.sid
+    return sid, provider
 
 
 # ─── Settings ────────────────────────────────────────────────────────────────
