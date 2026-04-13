@@ -616,20 +616,25 @@ function ApiKeysSection() {
     <>
       <div className="page-header">
         <h2>API Keys</h2>
-        <button className="btn btn-primary" onClick={handleCreate} disabled={!newKeyLabel.trim()}>
-          <Plus size={14} /> Create Key
-        </button>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <input
           className="input"
           placeholder='Key label (e.g., "Zapier", "GHL", "Retell AI")'
           value={newKeyLabel}
           onChange={(e) => setNewKeyLabel(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-          style={{ width: '100%' }}
+          onKeyDown={(e) => e.key === 'Enter' && newKeyLabel.trim() && handleCreate()}
+          style={{ flex: 1 }}
         />
+        <button
+          className="btn btn-primary"
+          onClick={handleCreate}
+          disabled={!newKeyLabel.trim()}
+          style={{ opacity: newKeyLabel.trim() ? 1 : 0.5, cursor: newKeyLabel.trim() ? 'pointer' : 'not-allowed', flexShrink: 0 }}
+        >
+          <Plus size={14} /> Create Key
+        </button>
       </div>
 
       {newKeyResult && (
