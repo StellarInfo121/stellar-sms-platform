@@ -85,13 +85,21 @@ def get_effective_user_id():
 
 
 def normalize_phone(phone):
-    digits = re.sub(r'[^\d+]', '', phone.strip())
-    if digits and not digits.startswith('+'):
-        if len(digits) == 10:
-            digits = '+1' + digits
-        elif len(digits) == 11 and digits.startswith('1'):
-            digits = '+' + digits
-    return digits
+    if not phone:
+        return ''
+    raw = phone.strip()
+    # Already in E.164
+    if raw.startswith('+') and len(raw) >= 11:
+        return '+' + re.sub(r'\D', '', raw)
+    # Strip ALL non-digit characters
+    digits = re.sub(r'\D', '', raw)
+    if len(digits) == 10:
+        return '+1' + digits
+    elif len(digits) == 11 and digits.startswith('1'):
+        return '+' + digits
+    elif len(digits) > 11:
+        return '+' + digits
+    return '+' + digits if digits else ''
 
 
 def get_active_provider():
@@ -1021,11 +1029,18 @@ def serve_frontend(path):
 # ─── Init ────────────────────────────────────────────────────────────────────
 
 def _seed_users():
-    if User.query.count() == 0:
-        for name, email, role in SEED_USERS:
-            db.session.add(User(name=name, email=email, role=role))
-        db.session.commit()
-        print("Seeded users")
+    for name, email, role in SEED_USERS:
+        if email:
+            existing = User.query.filter(db.func.lower(User.email) == email.lower()).first()
+            if existing:
+                continue
+        else:
+            existing = User.query.filter_by(name=name).first()
+            if existing:
+                continue
+        db.session.add(User(name=name, email=email, role=role))
+    db.session.commit()
+    print("Seed check complete")
 
 with app.app_context():
     try:
