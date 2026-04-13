@@ -251,3 +251,46 @@ class DailyMessageCount(db.Model):
     date = db.Column(db.Date, nullable=False)
     provider = db.Column(db.String(20), default='')
     count = db.Column(db.Integer, default=0)
+
+
+class ApiKey(db.Model):
+    __tablename__ = 'api_keys'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    key_hash = db.Column(db.String(64), nullable=False, unique=True)
+    key_prefix = db.Column(db.String(12), nullable=False)
+    label = db.Column(db.String(200), default='')
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    last_used = db.Column(db.DateTime, nullable=True)
+
+    owner = db.relationship('User', backref='api_keys')
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'user_id': self.user_id,
+            'key_prefix': self.key_prefix, 'label': self.label,
+            'owner_name': self.owner.name if self.owner else '',
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'last_used': self.last_used.isoformat() if self.last_used else None,
+        }
+
+
+class WebhookEndpoint(db.Model):
+    __tablename__ = 'webhook_endpoints'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    url = db.Column(db.String(500), nullable=False)
+    events = db.Column(db.String(500), default='')
+    active = db.Column(db.Boolean, default=True)
+    secret = db.Column(db.String(64), default='')
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    owner = db.relationship('User', backref='webhook_endpoints')
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'user_id': self.user_id,
+            'url': self.url, 'events': self.events.split(',') if self.events else [],
+            'active': self.active, 'secret': self.secret,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }

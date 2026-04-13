@@ -16,9 +16,12 @@ from flask import Flask, request, jsonify, send_from_directory, Response, sessio
 from flask_cors import CORS
 from twilio.rest import Client as TwilioClient
 
+import hashlib
+from collections import defaultdict
+
 from models import (db, Setting, User, Contact, ContactImport,
                      Conversation, ConversationEvent, Message, Template,
-                     Campaign, BlastMessage, DailyMessageCount)
+                     Campaign, BlastMessage, DailyMessageCount, ApiKey, WebhookEndpoint)
 
 load_dotenv()
 
@@ -176,6 +179,10 @@ def require_auth():
     path = request.path
     if path.startswith('/auth/'):
         return
+    if path.startswith('/api/v1/'):
+        return  # v1 endpoints use API key auth
+    if path.startswith('/api/api-keys'):
+        return  # handled in route
     if path.startswith('/api/sms/twilio/webhook'):
         return
     if path.startswith('/api/sms/signalwire/webhook'):
@@ -706,6 +713,10 @@ def _handle_inbound(from_, to_, body, sid, provider):
     _increment_daily_count(provider)
     db.session.commit()
 
+    if rep_id:
+        _dispatch_webhook(rep_id, 'message.received', {
+            'message_id': msg.id, 'from': from_, 'to': to_, 'body': body, 'provider': provider})
+
 
 @app.route('/api/sms/status', methods=['POST'])
 def sms_status_callback():
@@ -716,6 +727,7 @@ def sms_status_callback():
         if msg:
             msg.status = status
             db.session.commit()
+            _dispatch_on_status(sid, status)
         bm = BlastMessage.query.filter_by(sid=sid).first()
         if bm:
             bm.status = status
@@ -1014,6 +1026,448 @@ def export_analytics():
             sum(1 for x in msgs if x.direction == 'inbound')])
     return Response(output.getvalue(), mimetype='text/csv',
                     headers={'Content-Disposition': 'attachment; filename=analytics.csv'})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PUBLIC REST API v1 — API key authenticated
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_rate_limits = defaultdict(list)  # key_hash -> [timestamps]
+RATE_LIMIT = 100
+RATE_WINDOW = 60
+
+
+def _hash_key(raw_key):
+    return hashlib.sha256(raw_key.encode()).hexdigest()
+
+
+def _authenticate_api_key():
+    """Authenticate via Bearer token or api_key param. Returns (user, api_key_obj) or raises."""
+    raw = None
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        raw = auth_header[7:].strip()
+    if not raw:
+        raw = request.args.get('api_key', '').strip()
+    if not raw:
+        return None, None
+
+    h = _hash_key(raw)
+    ak = ApiKey.query.filter_by(key_hash=h).first()
+    if not ak:
+        return None, None
+
+    # Rate limit check
+    now = time.time()
+    _rate_limits[h] = [t for t in _rate_limits[h] if now - t < RATE_WINDOW]
+    if len(_rate_limits[h]) >= RATE_LIMIT:
+        return 'rate_limited', None
+    _rate_limits[h].append(now)
+
+    ak.last_used = datetime.now(timezone.utc)
+    db.session.commit()
+
+    user = User.query.get(ak.user_id)
+    return user, ak
+
+
+def _require_api_auth():
+    user, ak = _authenticate_api_key()
+    if user == 'rate_limited':
+        return None, jsonify({'error': 'Rate limit exceeded. 100 requests per minute.'}), 429
+    if not user or not ak:
+        return None, jsonify({'error': 'Invalid or missing API key'}), 401
+    return user, None, None
+
+
+def _dispatch_webhook(user_id, event, payload):
+    """Fire outbound webhook in background."""
+    def _send(url, secret, data):
+        try:
+            headers = {'Content-Type': 'application/json'}
+            if secret:
+                headers['X-Webhook-Secret'] = secret
+            http_requests.post(url, json=data, headers=headers, timeout=10)
+        except Exception as e:
+            print(f"[Webhook ERROR] url={url} error={e}")
+
+    with app.app_context():
+        endpoints = WebhookEndpoint.query.filter_by(user_id=user_id, active=True).all()
+        for ep in endpoints:
+            events = [e.strip() for e in ep.events.split(',') if e.strip()]
+            if event in events or not events:
+                t = threading.Thread(target=_send, args=(ep.url, ep.secret, {'event': event, **payload}))
+                t.daemon = True
+                t.start()
+
+
+# ─── API Key Management (session-auth, from Settings) ────────────────────────
+
+@app.route('/api/api-keys', methods=['GET'])
+def list_api_keys():
+    current = get_current_user()
+    if not current:
+        return jsonify({'error': 'Auth required'}), 401
+    if current.role == 'admin':
+        keys = ApiKey.query.order_by(ApiKey.created_at.desc()).all()
+    else:
+        keys = ApiKey.query.filter_by(user_id=current.id).order_by(ApiKey.created_at.desc()).all()
+    return jsonify([k.to_dict() for k in keys])
+
+
+@app.route('/api/api-keys', methods=['POST'])
+def create_api_key():
+    current = get_current_user()
+    if not current:
+        return jsonify({'error': 'Auth required'}), 401
+    data = request.json
+    raw_key = 'sk_' + secrets.token_hex(16)
+    ak = ApiKey(
+        user_id=current.id, key_hash=_hash_key(raw_key),
+        key_prefix=raw_key[:10] + '...', label=data.get('label', ''))
+    db.session.add(ak)
+    db.session.commit()
+    return jsonify({**ak.to_dict(), 'key': raw_key}), 201
+
+
+@app.route('/api/api-keys/<int:kid>', methods=['DELETE'])
+def revoke_api_key(kid):
+    current = get_current_user()
+    if not current:
+        return jsonify({'error': 'Auth required'}), 401
+    ak = ApiKey.query.get_or_404(kid)
+    if ak.user_id != current.id and current.role != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+    db.session.delete(ak)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+# ─── Outbound Webhook Management ────────────────────────────────────────────
+
+@app.route('/api/v1/webhooks', methods=['GET'])
+def list_webhooks_v1():
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    hooks = WebhookEndpoint.query.filter_by(user_id=user.id).all()
+    return jsonify([h.to_dict() for h in hooks])
+
+
+@app.route('/api/v1/webhooks', methods=['POST'])
+def create_webhook_v1():
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    data = request.json
+    ep = WebhookEndpoint(
+        user_id=user.id, url=data['url'],
+        events=','.join(data.get('events', [])),
+        secret=data.get('secret', secrets.token_hex(16)))
+    db.session.add(ep)
+    db.session.commit()
+    return jsonify(ep.to_dict()), 201
+
+
+@app.route('/api/v1/webhooks/<int:wid>', methods=['DELETE'])
+def delete_webhook_v1(wid):
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    ep = WebhookEndpoint.query.get_or_404(wid)
+    if ep.user_id != user.id:
+        return jsonify({'error': 'Forbidden'}), 403
+    db.session.delete(ep)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+# ─── API v1: Messages ────────────────────────────────────────────────────────
+
+@app.route('/api/v1/messages/send', methods=['POST'])
+def api_v1_send():
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    data = request.json
+    to = normalize_phone(data.get('to', ''))
+    body = data.get('body', '')
+    if not to or not body:
+        return jsonify({'error': 'to and body are required'}), 400
+
+    provider = data.get('provider') or get_active_provider()
+    try:
+        from_number = _get_from_number(user, provider)
+        sid, used_provider = send_sms(to, body, provider, from_number)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+    convo = Conversation.query.filter_by(phone=to, user_id=user.id).first()
+    if not convo:
+        contact = Contact.query.filter_by(phone=to, user_id=user.id).first()
+        convo = Conversation(phone=to, contact_name=contact.name if contact else to, user_id=user.id)
+        db.session.add(convo)
+        db.session.flush()
+
+    msg = Message(conversation_id=convo.id, direction='outbound', body=body,
+                  provider=used_provider, status='sent', sid=sid,
+                  sender_name=user.name, sender_id=user.id, from_number=from_number)
+    db.session.add(msg)
+    convo.last_message = body
+    convo.last_message_at = datetime.now(timezone.utc)
+    db.session.commit()
+    return jsonify({'success': True, 'message_id': msg.id, 'sid': sid, 'provider': used_provider}), 201
+
+
+@app.route('/api/v1/messages', methods=['GET'])
+def api_v1_messages():
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    page = int(request.args.get('page', 1))
+    per_page = min(int(request.args.get('per_page', 50)), 100)
+    phone = request.args.get('phone', '')
+    direction = request.args.get('direction', '')
+
+    cids = [c.id for c in Conversation.query.filter(
+        db.or_(Conversation.user_id == user.id, Conversation.assigned_to == user.id)).all()]
+    query = Message.query.filter(Message.conversation_id.in_(cids)) if cids else Message.query.filter(False)
+
+    if phone:
+        phone_convos = [c.id for c in Conversation.query.filter_by(phone=normalize_phone(phone)).all()]
+        query = query.filter(Message.conversation_id.in_(phone_convos))
+    if direction:
+        query = query.filter(Message.direction == direction)
+
+    total = query.count()
+    msgs = query.order_by(Message.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+    return jsonify({'messages': [m.to_dict() for m in msgs], 'total': total, 'page': page, 'per_page': per_page})
+
+
+@app.route('/api/v1/conversations', methods=['GET'])
+def api_v1_conversations():
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    convos = Conversation.query.filter(
+        db.or_(Conversation.user_id == user.id, Conversation.assigned_to == user.id)
+    ).order_by(Conversation.last_message_at.desc()).all()
+    return jsonify([c.to_dict() for c in convos])
+
+
+@app.route('/api/v1/conversations/<int:cid>/messages', methods=['GET'])
+def api_v1_convo_messages(cid):
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    convo = Conversation.query.get_or_404(cid)
+    msgs = Message.query.filter_by(conversation_id=cid).order_by(Message.created_at.asc()).all()
+    return jsonify([m.to_dict() for m in msgs])
+
+
+# ─── API v1: Contacts ────────────────────────────────────────────────────────
+
+@app.route('/api/v1/contacts', methods=['GET'])
+def api_v1_contacts():
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    page = int(request.args.get('page', 1))
+    per_page = min(int(request.args.get('per_page', 50)), 100)
+    search = request.args.get('search', '')
+    tag = request.args.get('tag', '')
+
+    query = Contact.query.filter(Contact.user_id == user.id)
+    if search:
+        like = f'%{search}%'
+        query = query.filter(db.or_(Contact.name.ilike(like), Contact.phone.ilike(like), Contact.business.ilike(like)))
+    if tag:
+        query = query.filter(Contact.tags.ilike(f'%{tag}%'))
+
+    total = query.count()
+    contacts = query.order_by(Contact.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+    return jsonify({'contacts': [c.to_dict() for c in contacts], 'total': total, 'page': page, 'per_page': per_page})
+
+
+@app.route('/api/v1/contacts', methods=['POST'])
+def api_v1_create_contact():
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    data = request.json
+    phone = normalize_phone(data.get('phone', ''))
+    if not phone:
+        return jsonify({'error': 'phone is required'}), 400
+    existing = Contact.query.filter_by(phone=phone, user_id=user.id).first()
+    if existing:
+        return jsonify({'error': 'Contact already exists', 'contact': existing.to_dict()}), 409
+    name = data.get('name', '') or f"{data.get('first_name', '')} {data.get('last_name', '')}".strip()
+    tags = ','.join(data.get('tags', [])) if isinstance(data.get('tags'), list) else data.get('tags', '')
+    c = Contact(user_id=user.id, name=name, first_name=data.get('first_name', ''),
+                last_name=data.get('last_name', ''), phone=phone,
+                email=data.get('email', ''), business=data.get('business', ''), tags=tags)
+    db.session.add(c)
+    db.session.commit()
+    return jsonify(c.to_dict()), 201
+
+
+@app.route('/api/v1/contacts/bulk', methods=['POST'])
+def api_v1_bulk_contacts():
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    items = request.json if isinstance(request.json, list) else request.json.get('contacts', [])
+    created, skipped = 0, 0
+    for data in items:
+        phone = normalize_phone(data.get('phone', ''))
+        if not phone:
+            skipped += 1
+            continue
+        if Contact.query.filter_by(phone=phone, user_id=user.id).first():
+            skipped += 1
+            continue
+        name = data.get('name', '') or f"{data.get('first_name', '')} {data.get('last_name', '')}".strip()
+        tags = ','.join(data.get('tags', [])) if isinstance(data.get('tags'), list) else data.get('tags', '')
+        db.session.add(Contact(user_id=user.id, name=name, first_name=data.get('first_name', ''),
+                               last_name=data.get('last_name', ''), phone=phone,
+                               email=data.get('email', ''), business=data.get('business', ''), tags=tags))
+        created += 1
+    db.session.commit()
+    return jsonify({'created': created, 'skipped': skipped}), 201
+
+
+@app.route('/api/v1/contacts/<int:cid>', methods=['PUT'])
+def api_v1_update_contact(cid):
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    c = Contact.query.get_or_404(cid)
+    if c.user_id != user.id:
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.json
+    if 'name' in data: c.name = data['name']
+    if 'first_name' in data: c.first_name = data['first_name']
+    if 'last_name' in data: c.last_name = data['last_name']
+    if 'phone' in data: c.phone = normalize_phone(data['phone'])
+    if 'email' in data: c.email = data['email']
+    if 'business' in data: c.business = data['business']
+    if 'tags' in data:
+        c.tags = ','.join(data['tags']) if isinstance(data['tags'], list) else data['tags']
+    db.session.commit()
+    return jsonify(c.to_dict())
+
+
+@app.route('/api/v1/contacts/<int:cid>', methods=['DELETE'])
+def api_v1_delete_contact(cid):
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    c = Contact.query.get_or_404(cid)
+    if c.user_id != user.id:
+        return jsonify({'error': 'Forbidden'}), 403
+    db.session.delete(c)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+# ─── API v1: Campaigns ──────────────────────────────────────────────────────
+
+@app.route('/api/v1/campaigns', methods=['GET'])
+def api_v1_campaigns():
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    campaigns = Campaign.query.filter_by(created_by=user.id).order_by(Campaign.created_at.desc()).all()
+    return jsonify([c.to_dict() for c in campaigns])
+
+
+@app.route('/api/v1/campaigns', methods=['POST'])
+def api_v1_create_campaign():
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    data = request.json
+    tags = ','.join(data.get('tags', [])) if isinstance(data.get('tags'), list) else data.get('tags', '')
+    provider = data.get('provider', get_active_provider())
+    c = Campaign(name=data['name'], message_template=data['message_template'], tags=tags,
+                 provider=provider, created_by=user.id)
+    db.session.add(c)
+    db.session.commit()
+
+    if data.get('send_now'):
+        # Trigger send immediately
+        return _trigger_campaign_send(c, user)
+
+    return jsonify(c.to_dict()), 201
+
+
+@app.route('/api/v1/campaigns/<int:cid>/send', methods=['POST'])
+def api_v1_send_campaign(cid):
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    campaign = Campaign.query.get_or_404(cid)
+    if campaign.created_by != user.id:
+        return jsonify({'error': 'Forbidden'}), 403
+    return _trigger_campaign_send(campaign, user)
+
+
+def _trigger_campaign_send(campaign, user):
+    if campaign.status == 'sending':
+        return jsonify({'error': 'Campaign already sending'}), 400
+    provider = campaign.provider
+    try:
+        from_number = _get_from_number(user, provider)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+    contact_query = Contact.query.filter(Contact.user_id == user.id, Contact.opted_out == False,
+                                          Contact.blocked == False, Contact.invalid == False)
+    if campaign.tags:
+        tag_list = [t.strip() for t in campaign.tags.split(',') if t.strip()]
+        contacts = [c for c in contact_query.all() if any(
+            tag in [t.strip() for t in c.tags.split(',') if t.strip()] for tag in tag_list)]
+    else:
+        contacts = contact_query.all()
+
+    if not contacts:
+        return jsonify({'error': 'No contacts matched'}), 400
+
+    contacts = contacts[:10000]
+    opt_out_suffix = '\nReply STOP to opt out'
+    for contact in contacts:
+        body = campaign.message_template
+        for key, val in [('{name}', contact.name or ''), ('{first_name}', contact.first_name or ''),
+                         ('{last_name}', contact.last_name or ''), ('{business}', contact.business or ''),
+                         ('{email}', contact.email or '')]:
+            body = body.replace(key, val)
+        body += opt_out_suffix
+        db.session.add(BlastMessage(campaign_id=campaign.id, contact_id=contact.id,
+                                     phone=contact.phone, contact_name=contact.name, body=body))
+
+    campaign.total_messages = len(contacts)
+    campaign.sent_count = campaign.delivered_count = campaign.failed_count = campaign.replied_count = 0
+    campaign.status = 'sending'
+    db.session.commit()
+
+    thread = threading.Thread(target=_run_blast, args=(app, campaign.id, from_number))
+    thread.daemon = True
+    thread.start()
+    return jsonify(campaign.to_dict())
+
+
+@app.route('/api/v1/campaigns/<int:cid>/status', methods=['GET'])
+def api_v1_campaign_status(cid):
+    user, err, code = _require_api_auth()
+    if err: return err, code
+    c = Campaign.query.get_or_404(cid)
+    return jsonify({'status': c.status, 'total': c.total_messages,
+                    'sent': c.sent_count, 'delivered': c.delivered_count,
+                    'failed': c.failed_count, 'replied': c.replied_count})
+
+
+# ─── Webhook dispatch hooks ─────────────────────────────────────────────────
+
+def _dispatch_on_status(sid, status):
+    """Called when message status updates to fire outbound webhooks."""
+    msg = Message.query.filter_by(sid=sid).first()
+    if not msg:
+        return
+    convo = Conversation.query.get(msg.conversation_id)
+    if not convo or not convo.user_id:
+        return
+    event_map = {'delivered': 'message.delivered', 'failed': 'message.failed', 'undelivered': 'message.failed'}
+    event = event_map.get(status)
+    if event:
+        _dispatch_webhook(convo.user_id, event, {
+            'message_id': msg.id, 'phone': convo.phone, 'status': status, 'body': msg.body})
+
+
 
 
 # ─── Serve React frontend ────────────────────────────────────────────────────

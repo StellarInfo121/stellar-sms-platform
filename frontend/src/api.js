@@ -25,6 +25,13 @@ async function request(path, options = {}) {
 // Auth
 export const getMe = () => request('/auth/me');
 
+// API Keys
+export const getApiKeys = () => request('/api-keys');
+export const createApiKey = (data) =>
+  request('/api-keys', { method: 'POST', body: JSON.stringify(data) });
+export const revokeApiKey = (id) =>
+  request(`/api-keys/${id}`, { method: 'DELETE' });
+
 // Users
 export const getUsers = () => request('/users');
 export const createUser = (data) =>
