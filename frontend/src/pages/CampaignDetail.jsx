@@ -208,7 +208,7 @@ export default function CampaignDetail() {
                         </span>
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--error, #dc2626)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {m.error || ''}
+                        {m.error_message || ''}
                       </td>
                     </tr>
                   )

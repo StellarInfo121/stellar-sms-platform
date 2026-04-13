@@ -31,7 +31,7 @@ function formatTime(dateStr) {
 }
 
 const EMOJI_LIST = ['👍', '👋', '😊', '🎉', '✅', '❤️', '🙏', '😂', '🔥', '💯']
-const MERGE_VARS = ['{name}', '{business}', '{phone}', '{date}']
+const MERGE_VARS = ['{name}', '{first_name}', '{last_name}', '{business}', '{email}']
 
 export default function Inbox({ provider }) {
   const [conversations, setConversations] = useState([])
@@ -68,11 +68,15 @@ export default function Inbox({ provider }) {
       if (filter === 'open') params.filter = 'open'
       else if (filter === 'closed') params.filter = 'closed'
       else if (filter === 'starred') params.filter = 'starred'
-      else if (filter === 'mine') params.assigned_to = currentUser
+      else if (filter === 'mine') {
+        params.filter = 'assigned'
+        const moise = teamMembers.find(m => m.name === 'Moise')
+        if (moise) params.assigned_to = moise.id
+      }
       const data = await getConversations(params)
       setConversations(Array.isArray(data) ? data : [])
     } catch { /* silent */ }
-  }, [filter])
+  }, [filter, teamMembers])
 
   useEffect(() => {
     loadConversations()
@@ -133,9 +137,9 @@ export default function Inbox({ provider }) {
     loadConversations()
   }
 
-  const handleAssign = async (memberName) => {
+  const handleAssign = async (memberId) => {
     if (!activeConvo) return
-    await assignConversation(activeConvo.id, { assigned_to: memberName, assigned_by: currentUser })
+    await assignConversation(activeConvo.id, { assigned_to: memberId || null, assigned_by: 'Moise' })
     setShowAssignDropdown(false)
     loadConversations()
   }
@@ -269,9 +273,9 @@ export default function Inbox({ provider }) {
                     <span style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {displayName}
                     </span>
-                    {c.assigned_to && (
+                    {c.assigned_name && (
                       <span className="tag" style={{ fontSize: 10, padding: '1px 6px' }}>
-                        {c.assigned_to}
+                        {c.assigned_name}
                       </span>
                     )}
                   </div>
@@ -335,7 +339,7 @@ export default function Inbox({ provider }) {
                   style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}
                 >
                   <User size={14} />
-                  {activeConvo.assigned_to || 'Assign'}
+                  {activeConvo.assigned_name || 'Assign'}
                 </button>
                 {showAssignDropdown && (
                   <div style={{
@@ -345,7 +349,7 @@ export default function Inbox({ provider }) {
                     minWidth: 160, zIndex: 100, overflow: 'hidden'
                   }}>
                     <div
-                      onClick={() => handleAssign('')}
+                      onClick={() => handleAssign(null)}
                       style={{
                         padding: '8px 14px', cursor: 'pointer', fontSize: 13,
                         color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)'
@@ -356,16 +360,16 @@ export default function Inbox({ provider }) {
                     {teamMembers.map(m => (
                       <div
                         key={m.id}
-                        onClick={() => handleAssign(m.name)}
+                        onClick={() => handleAssign(m.id)}
                         style={{
                           padding: '8px 14px', cursor: 'pointer', fontSize: 13,
                           display: 'flex', alignItems: 'center', gap: 6,
-                          background: activeConvo.assigned_to === m.name ? 'rgba(155,127,191,0.1)' : 'transparent'
+                          background: activeConvo.assigned_to === m.id ? 'rgba(155,127,191,0.1)' : 'transparent'
                         }}
                         onMouseEnter={e => e.currentTarget.style.background = 'rgba(155,127,191,0.15)'}
-                        onMouseLeave={e => e.currentTarget.style.background = activeConvo.assigned_to === m.name ? 'rgba(155,127,191,0.1)' : 'transparent'}
+                        onMouseLeave={e => e.currentTarget.style.background = activeConvo.assigned_to === m.id ? 'rgba(155,127,191,0.1)' : 'transparent'}
                       >
-                        {activeConvo.assigned_to === m.name && <Check size={12} />}
+                        {activeConvo.assigned_to === m.id && <Check size={12} />}
                         {m.name}
                       </div>
                     ))}
@@ -414,7 +418,7 @@ export default function Inbox({ provider }) {
                 }
 
                 // Notes
-                if (m.type === 'note') {
+                if (m.is_note || m.direction === 'internal') {
                   return (
                     <div key={m.id} className="chat-bubble note" style={{
                       alignSelf: 'center', maxWidth: '70%',

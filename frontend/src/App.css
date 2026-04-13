@@ -1,3 +1,7 @@
+/* App Layout */
+.app-layout { display: flex; flex-direction: column; min-height: 100vh; }
+.page { padding: 24px; overflow-y: auto; height: calc(100vh - 56px); }
+
 /* Top Navigation */
 .top-nav {
   display: flex; align-items: center; justify-content: space-between;
