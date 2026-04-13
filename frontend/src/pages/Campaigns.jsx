@@ -316,7 +316,7 @@ export default function Campaigns({ provider }) {
                     className="tag"
                     style={{
                       cursor: 'pointer',
-                      background: form.tags.includes(tag) ? 'var(--medium-purple)' : 'rgba(155,127,191,0.2)',
+                      background: form.tags.includes(tag) ? 'var(--medium-purple)' : '#EDE5F5',
                       color: form.tags.includes(tag) ? 'white' : 'var(--light-purple)',
                       border: 'none',
                       padding: '4px 10px',

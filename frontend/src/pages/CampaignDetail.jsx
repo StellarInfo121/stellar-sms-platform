@@ -4,18 +4,18 @@ import { ArrowLeft, Download, ChevronLeft, ChevronRight, Filter } from 'lucide-r
 import { getCampaign, getCampaignMessages, exportCampaign } from '../api'
 
 const STATUS_BADGE = {
-  draft: { bg: 'rgba(150,150,150,0.15)', color: 'var(--text-muted)' },
-  sending: { bg: 'rgba(234,179,8,0.15)', color: '#ca8a04' },
-  completed: { bg: 'rgba(34,197,94,0.15)', color: '#16a34a' },
-  failed: { bg: 'rgba(239,68,68,0.15)', color: '#dc2626' },
+  draft: { bg: '#F0F0F0', color: 'var(--text-muted)' },
+  sending: { bg: '#FEF9E7', color: '#ca8a04' },
+  completed: { bg: '#E8F8EE', color: '#16a34a' },
+  failed: { bg: '#FDE8E8', color: '#dc2626' },
 }
 
 const MSG_STATUS_BADGE = {
-  sent: { bg: 'rgba(59,130,246,0.12)', color: '#2563eb' },
-  delivered: { bg: 'rgba(34,197,94,0.12)', color: '#16a34a' },
-  failed: { bg: 'rgba(239,68,68,0.12)', color: '#dc2626' },
-  replied: { bg: 'rgba(155,127,191,0.15)', color: 'var(--medium-purple, #9b7fbf)' },
-  pending: { bg: 'rgba(150,150,150,0.12)', color: 'var(--text-muted)' },
+  sent: { bg: '#EBF2FE', color: '#2563eb' },
+  delivered: { bg: '#E8F8EE', color: '#16a34a' },
+  failed: { bg: '#FDE8E8', color: '#dc2626' },
+  replied: { bg: '#F5F0FA', color: 'var(--medium-purple, #9b7fbf)' },
+  pending: { bg: '#F0F0F0', color: 'var(--text-muted)' },
 }
 
 function highlightMergeVars(text) {
@@ -141,9 +141,9 @@ export default function CampaignDetail() {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  background: isActive ? 'var(--medium-purple, #9b7fbf)' : 'var(--bg-card, rgba(255,255,255,0.04))',
+                  background: isActive ? 'var(--medium-purple, #9b7fbf)' : '#FFFFFF',
                   color: isActive ? 'white' : 'var(--text-primary)',
-                  border: isActive ? '1px solid var(--medium-purple, #9b7fbf)' : '1px solid var(--border-color, rgba(255,255,255,0.08))',
+                  border: isActive ? '1px solid var(--medium-purple, #9b7fbf)' : '1px solid var(--border-color)',
                   transition: 'all 0.15s ease',
                   fontSize: 13,
                 }}

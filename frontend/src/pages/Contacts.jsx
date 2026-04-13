@@ -30,7 +30,7 @@ function autoDetectMapping(columns) {
 
 function getStatusLabel(contact) {
   if (contact.blocked) return { text: 'Blocked', color: 'var(--text-muted)' }
-  if (contact.invalid) return { text: 'Invalid', color: 'var(--warning, #f59e0b)' }
+  if (contact.invalid) return { text: 'Invalid', color: '#F59E0B' }
   if (contact.opted_out) return { text: 'Opted Out', color: 'var(--error)' }
   return { text: 'Active', color: 'var(--success)' }
 }

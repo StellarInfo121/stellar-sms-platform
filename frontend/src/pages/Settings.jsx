@@ -37,7 +37,7 @@ function highlightMergeVars(text) {
   const parts = text.split(/(\{[^}]+\})/g)
   return parts.map((part, i) =>
     /^\{[^}]+\}$/.test(part) ? (
-      <span key={i} style={{ color: 'var(--purple, #a855f7)', fontWeight: 600 }}>
+      <span key={i} style={{ color: 'var(--medium-purple)', fontWeight: 600 }}>
         {part}
       </span>
     ) : (

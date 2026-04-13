@@ -200,8 +200,8 @@ export default function Inbox({ provider }) {
               style={{
                 display: 'flex', alignItems: 'center', gap: 8, width: '100%',
                 padding: '8px 12px', border: 'none', borderRadius: 6,
-                background: filter === f.key ? 'rgba(155,127,191,0.15)' : 'none',
-                color: filter === f.key ? 'var(--light-purple)' : 'var(--text-secondary)',
+                background: filter === f.key ? '#EDE5F5' : 'none',
+                color: filter === f.key ? 'var(--medium-purple)' : 'var(--text-secondary)',
                 cursor: 'pointer', fontSize: 13, fontWeight: filter === f.key ? 600 : 400,
                 textAlign: 'left', marginBottom: 2
               }}
@@ -253,8 +253,8 @@ export default function Inbox({ provider }) {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10,
                   padding: '12px 16px', cursor: 'pointer',
-                  borderBottom: '1px solid rgba(61,45,86,0.15)',
-                  background: isActive ? 'rgba(155,127,191,0.15)' : 'transparent',
+                  borderBottom: '1px solid var(--border-color)',
+                  background: isActive ? '#EDE5F5' : 'transparent',
                   position: 'relative'
                 }}
                 onMouseEnter={e => { const star = e.currentTarget.querySelector('.hover-star'); if (star) star.style.opacity = '1' }}
@@ -263,7 +263,7 @@ export default function Inbox({ provider }) {
                 <div style={{
                   width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
                   background: 'linear-gradient(135deg, var(--medium-purple), var(--light-purple))',
-                  color: 'var(--deep-purple)', display: 'flex', alignItems: 'center',
+                  color: 'white', display: 'flex', alignItems: 'center',
                   justifyContent: 'center', fontWeight: 700, fontSize: 15
                 }}>
                   {displayName[0]?.toUpperCase()}
@@ -315,12 +315,12 @@ export default function Inbox({ provider }) {
             <div style={{
               display: 'flex', alignItems: 'center', gap: 12,
               padding: '12px 20px', borderBottom: '1px solid var(--border-color)',
-              background: 'var(--bg-secondary)'
+              background: '#FFFFFF'
             }}>
               <div style={{
                 width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
                 background: 'linear-gradient(135deg, var(--medium-purple), var(--light-purple))',
-                color: 'var(--deep-purple)', display: 'flex', alignItems: 'center',
+                color: 'white', display: 'flex', alignItems: 'center',
                 justifyContent: 'center', fontWeight: 700, fontSize: 15
               }}>
                 {(activeConvo.contact_name || activeConvo.phone)[0]?.toUpperCase()}
@@ -345,7 +345,7 @@ export default function Inbox({ provider }) {
                   <div style={{
                     position: 'absolute', top: '100%', right: 0, marginTop: 4,
                     background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-                    borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                    borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
                     minWidth: 160, zIndex: 100, overflow: 'hidden'
                   }}>
                     <div
@@ -364,10 +364,10 @@ export default function Inbox({ provider }) {
                         style={{
                           padding: '8px 14px', cursor: 'pointer', fontSize: 13,
                           display: 'flex', alignItems: 'center', gap: 6,
-                          background: activeConvo.assigned_to === m.id ? 'rgba(155,127,191,0.1)' : 'transparent'
+                          background: activeConvo.assigned_to === m.id ? '#F5F0FA' : 'transparent'
                         }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(155,127,191,0.15)'}
-                        onMouseLeave={e => e.currentTarget.style.background = activeConvo.assigned_to === m.id ? 'rgba(155,127,191,0.1)' : 'transparent'}
+                        onMouseEnter={e => e.currentTarget.style.background = '#EDE5F5'}
+                        onMouseLeave={e => e.currentTarget.style.background = activeConvo.assigned_to === m.id ? '#F5F0FA' : 'transparent'}
                       >
                         {activeConvo.assigned_to === m.id && <Check size={12} />}
                         {m.name}
@@ -422,12 +422,12 @@ export default function Inbox({ provider }) {
                   return (
                     <div key={m.id} className="chat-bubble note" style={{
                       alignSelf: 'center', maxWidth: '70%',
-                      background: 'rgba(76, 175, 80, 0.1)', border: '1px solid rgba(76, 175, 80, 0.25)',
+                      background: '#FFFBE6', border: '1px solid #F0E6B8',
                       borderRadius: 12, padding: '10px 16px', fontStyle: 'italic', fontSize: 13
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        <StickyNote size={12} style={{ color: '#4caf50' }} />
-                        <span style={{ fontWeight: 600, fontSize: 11, color: '#4caf50' }}>
+                        <StickyNote size={12} style={{ color: '#92700C' }} />
+                        <span style={{ fontWeight: 600, fontSize: 11, color: '#92700C' }}>
                           {m.sender_name || 'Note'}
                         </span>
                       </div>
@@ -450,7 +450,7 @@ export default function Inbox({ provider }) {
                       maxWidth: '70%', padding: '10px 14px', borderRadius: 16,
                       fontSize: 14, lineHeight: 1.4,
                       ...(isOutbound
-                        ? { background: 'var(--medium-purple)', color: 'white', borderBottomRightRadius: 4 }
+                        ? { background: '#EDE5F5', color: '#1A1A1A', borderBottomRightRadius: 4 }
                         : { background: 'var(--bg-card)', borderBottomLeftRadius: 4 }
                       )
                     }}
@@ -466,10 +466,10 @@ export default function Inbox({ provider }) {
                       {isOutbound && m.status && (
                         <span className={`status-badge ${m.status}`} style={{
                           fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 500,
-                          background: m.status === 'delivered' ? 'rgba(76,175,80,0.2)' :
-                                     m.status === 'failed' ? 'rgba(244,67,54,0.2)' : 'rgba(255,193,7,0.2)',
-                          color: m.status === 'delivered' ? '#4caf50' :
-                                 m.status === 'failed' ? '#f44336' : '#ffc107'
+                          background: m.status === 'delivered' ? '#DCFCE7' :
+                                     m.status === 'failed' ? '#FEE2E2' : '#DBEAFE',
+                          color: m.status === 'delivered' ? '#166534' :
+                                 m.status === 'failed' ? '#991B1B' : '#1E40AF'
                         }}>
                           {m.status === 'delivered' ? 'Delivered' : m.status === 'failed' ? 'Failed' : 'Sent'}
                         </span>
@@ -482,7 +482,7 @@ export default function Inbox({ provider }) {
             </div>
 
             {/* Compose area */}
-            <div style={{ borderTop: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
+            <div style={{ borderTop: '1px solid var(--border-color)', background: '#FFFFFF' }}>
               {/* Tabs */}
               <div className="tab-bar" style={{
                 display: 'flex', borderBottom: '1px solid var(--border-color)', padding: '0 16px'
@@ -493,8 +493,8 @@ export default function Inbox({ provider }) {
                   style={{
                     padding: '8px 16px', border: 'none', background: 'none', cursor: 'pointer',
                     fontSize: 13, fontWeight: composeTab === 'message' ? 600 : 400,
-                    color: composeTab === 'message' ? 'var(--light-purple)' : 'var(--text-muted)',
-                    borderBottom: composeTab === 'message' ? '2px solid var(--light-purple)' : '2px solid transparent'
+                    color: composeTab === 'message' ? 'var(--medium-purple)' : 'var(--text-muted)',
+                    borderBottom: composeTab === 'message' ? '2px solid var(--medium-purple)' : '2px solid transparent'
                   }}
                 >
                   <Send size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} /> MESSAGE
@@ -505,8 +505,8 @@ export default function Inbox({ provider }) {
                   style={{
                     padding: '8px 16px', border: 'none', background: 'none', cursor: 'pointer',
                     fontSize: 13, fontWeight: composeTab === 'note' ? 600 : 400,
-                    color: composeTab === 'note' ? '#4caf50' : 'var(--text-muted)',
-                    borderBottom: composeTab === 'note' ? '2px solid #4caf50' : '2px solid transparent'
+                    color: composeTab === 'note' ? '#92700C' : 'var(--text-muted)',
+                    borderBottom: composeTab === 'note' ? '2px solid #92700C' : '2px solid transparent'
                   }}
                 >
                   <StickyNote size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} /> NOTE
@@ -551,7 +551,7 @@ export default function Inbox({ provider }) {
                             position: 'absolute', bottom: '100%', left: 0, marginBottom: 4,
                             background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                             borderRadius: 8, padding: 8, display: 'flex', gap: 4, flexWrap: 'wrap',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 50, width: 200
+                            boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 50, width: 200
                           }}>
                             {EMOJI_LIST.map(emoji => (
                               <button
@@ -561,7 +561,7 @@ export default function Inbox({ provider }) {
                                   border: 'none', background: 'none', cursor: 'pointer',
                                   fontSize: 18, padding: 4, borderRadius: 4
                                 }}
-                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(155,127,191,0.15)'}
+                                onMouseEnter={e => e.currentTarget.style.background = '#EDE5F5'}
                                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
                               >
                                 {emoji}
@@ -585,7 +585,7 @@ export default function Inbox({ provider }) {
                             position: 'absolute', bottom: '100%', left: 0, marginBottom: 4,
                             background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                             borderRadius: 8, overflow: 'hidden',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 50, minWidth: 140
+                            boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 140
                           }}>
                             {MERGE_VARS.map(v => (
                               <div
@@ -595,7 +595,7 @@ export default function Inbox({ provider }) {
                                   padding: '8px 14px', cursor: 'pointer', fontSize: 13,
                                   fontFamily: 'monospace', borderBottom: '1px solid var(--border-color)'
                                 }}
-                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(155,127,191,0.15)'}
+                                onMouseEnter={e => e.currentTarget.style.background = '#EDE5F5'}
                                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                               >
                                 {v}
@@ -619,7 +619,7 @@ export default function Inbox({ provider }) {
                             position: 'absolute', bottom: '100%', left: 0, marginBottom: 4,
                             background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                             borderRadius: 8, overflow: 'hidden',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 50,
+                            boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 50,
                             minWidth: 200, maxHeight: 200, overflowY: 'auto'
                           }}>
                             {templates.length === 0 ? (
@@ -634,7 +634,7 @@ export default function Inbox({ provider }) {
                                   padding: '8px 14px', cursor: 'pointer', fontSize: 13,
                                   borderBottom: '1px solid var(--border-color)'
                                 }}
-                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(155,127,191,0.15)'}
+                                onMouseEnter={e => e.currentTarget.style.background = '#EDE5F5'}
                                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                               >
                                 <div style={{ fontWeight: 600, fontSize: 12 }}>{t.name || t.title}</div>
@@ -662,8 +662,8 @@ export default function Inbox({ provider }) {
                     onChange={e => setNoteText(e.target.value)}
                     style={{
                       width: '100%', minHeight: 60, maxHeight: 120, resize: 'vertical',
-                      fontSize: 13, background: 'rgba(76, 175, 80, 0.06)',
-                      border: '1px solid rgba(76, 175, 80, 0.25)'
+                      fontSize: 13, background: '#FFFBE6',
+                      border: '1px solid #F0E6B8'
                     }}
                     rows={3}
                   />
@@ -673,7 +673,7 @@ export default function Inbox({ provider }) {
                       onClick={handleAddNote}
                       disabled={!noteText.trim()}
                       style={{
-                        background: '#4caf50', color: 'white', border: 'none',
+                        background: '#B8860B', color: 'white', border: 'none',
                         display: 'flex', alignItems: 'center', gap: 4
                       }}
                     >
