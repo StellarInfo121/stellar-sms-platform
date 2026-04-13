@@ -17,6 +17,8 @@ class User(db.Model):
     email = db.Column(db.String(200), unique=True, nullable=True)
     role = db.Column(db.String(50), default='user')
     avatar_url = db.Column(db.String(500), default='')
+    twilio_number = db.Column(db.String(20), nullable=True)
+    signalwire_number = db.Column(db.String(20), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_login = db.Column(db.DateTime, nullable=True)
 
@@ -24,6 +26,8 @@ class User(db.Model):
         return {
             'id': self.id, 'name': self.name, 'email': self.email or '',
             'role': self.role, 'avatar_url': self.avatar_url or '',
+            'twilio_number': self.twilio_number or '',
+            'signalwire_number': self.signalwire_number or '',
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'last_login': self.last_login.isoformat() if self.last_login else None,
         }
@@ -32,10 +36,11 @@ class User(db.Model):
 class Contact(db.Model):
     __tablename__ = 'contacts'
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     name = db.Column(db.String(200), nullable=False, default='')
     first_name = db.Column(db.String(100), default='')
     last_name = db.Column(db.String(100), default='')
-    phone = db.Column(db.String(20), nullable=False, unique=True)
+    phone = db.Column(db.String(20), nullable=False)
     email = db.Column(db.String(200), default='')
     business = db.Column(db.String(200), default='')
     tags = db.Column(db.String(500), default='')
@@ -44,9 +49,11 @@ class Contact(db.Model):
     invalid = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
+    owner = db.relationship('User', foreign_keys=[user_id])
+
     def to_dict(self):
         return {
-            'id': self.id, 'name': self.name,
+            'id': self.id, 'user_id': self.user_id, 'name': self.name,
             'first_name': self.first_name, 'last_name': self.last_name,
             'phone': self.phone, 'email': self.email,
             'business': self.business,
@@ -59,6 +66,7 @@ class Contact(db.Model):
 class ContactImport(db.Model):
     __tablename__ = 'contact_imports'
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     filename = db.Column(db.String(500), nullable=False)
     total_rows = db.Column(db.Integer, default=0)
     created_count = db.Column(db.Integer, default=0)
@@ -78,7 +86,8 @@ class ContactImport(db.Model):
 class Conversation(db.Model):
     __tablename__ = 'conversations'
     id = db.Column(db.Integer, primary_key=True)
-    phone = db.Column(db.String(20), nullable=False, unique=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    phone = db.Column(db.String(20), nullable=False)
     contact_name = db.Column(db.String(200), default='')
     last_message = db.Column(db.Text, default='')
     last_message_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -88,15 +97,17 @@ class Conversation(db.Model):
     messages = db.relationship('Message', backref='conversation', lazy='dynamic')
     events = db.relationship('ConversationEvent', backref='conversation', lazy='dynamic')
     assignee = db.relationship('User', foreign_keys=[assigned_to])
+    rep = db.relationship('User', foreign_keys=[user_id])
 
     def to_dict(self):
         return {
-            'id': self.id, 'phone': self.phone,
+            'id': self.id, 'user_id': self.user_id, 'phone': self.phone,
             'contact_name': self.contact_name,
             'last_message': self.last_message,
             'last_message_at': self.last_message_at.isoformat() if self.last_message_at else None,
             'assigned_to': self.assigned_to,
             'assigned_name': self.assignee.name if self.assignee else None,
+            'rep_name': self.rep.name if self.rep else None,
             'starred': self.starred, 'status': self.status,
         }
 
@@ -131,6 +142,7 @@ class Message(db.Model):
     is_note = db.Column(db.Boolean, default=False)
     sender_name = db.Column(db.String(200), default='')
     sender_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    from_number = db.Column(db.String(20), default='')
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
@@ -139,7 +151,7 @@ class Message(db.Model):
             'direction': self.direction, 'body': self.body,
             'provider': self.provider, 'status': self.status,
             'is_note': self.is_note, 'sender_name': self.sender_name,
-            'sender_id': self.sender_id,
+            'sender_id': self.sender_id, 'from_number': self.from_number,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -181,6 +193,8 @@ class Campaign(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
+    creator = db.relationship('User', foreign_keys=[created_by])
+
     def to_dict(self):
         return {
             'id': self.id, 'name': self.name,
@@ -193,6 +207,8 @@ class Campaign(db.Model):
             'total_messages': self.total_messages,
             'sent_count': self.sent_count, 'delivered_count': self.delivered_count,
             'failed_count': self.failed_count, 'replied_count': self.replied_count,
+            'created_by': self.created_by,
+            'creator_name': self.creator.name if self.creator else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 

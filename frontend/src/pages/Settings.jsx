@@ -292,7 +292,7 @@ function TeamSection({ currentUser }) {
   const [members, setMembers] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
-  const [form, setForm] = useState({ name: '', email: '', role: 'rep' })
+  const [form, setForm] = useState({ name: '', email: '', role: 'rep', twilio_number: '', signalwire_number: '' })
 
   useEffect(() => {
     loadMembers()
@@ -305,21 +305,21 @@ function TeamSection({ currentUser }) {
 
   const openCreate = () => {
     setEditing(null)
-    setForm({ name: '', email: '', role: 'rep' })
+    setForm({ name: '', email: '', role: 'rep', twilio_number: '', signalwire_number: '' })
     setShowModal(true)
   }
 
   const openEdit = (member) => {
     setEditing(member)
-    setForm({ name: member.name, email: member.email || '', role: member.role })
+    setForm({ name: member.name, email: member.email || '', role: member.role, twilio_number: member.twilio_number || '', signalwire_number: member.signalwire_number || '' })
     setShowModal(true)
   }
 
   const handleSave = async () => {
     if (editing) {
-      await updateUser(editing.id, { name: form.name, email: form.email, role: form.role })
+      await updateUser(editing.id, { name: form.name, email: form.email, role: form.role, twilio_number: form.twilio_number, signalwire_number: form.signalwire_number })
     } else {
-      await createUser({ name: form.name, email: form.email, role: form.role })
+      await createUser({ name: form.name, email: form.email, role: form.role, twilio_number: form.twilio_number, signalwire_number: form.signalwire_number })
     }
     setShowModal(false)
     loadMembers()
@@ -353,6 +353,8 @@ function TeamSection({ currentUser }) {
               <tr>
                 <th>Name</th>
                 <th>Email</th>
+                <th>Twilio Number</th>
+                <th>SignalWire Number</th>
                 <th>Role</th>
                 <th>Actions</th>
               </tr>
@@ -362,6 +364,8 @@ function TeamSection({ currentUser }) {
                 <tr key={m.id}>
                   <td>{m.name}</td>
                   <td>{m.email}</td>
+                  <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{m.twilio_number || '--'}</td>
+                  <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{m.signalwire_number || '--'}</td>
                   <td>
                     <span className="tag">
                       {m.role === 'admin' ? (
@@ -438,6 +442,26 @@ function TeamSection({ currentUser }) {
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 placeholder="Email address"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Twilio Phone Number</label>
+              <input
+                className="input"
+                placeholder="+15551234567"
+                value={form.twilio_number}
+                onChange={(e) => setForm({ ...form, twilio_number: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>SignalWire Phone Number</label>
+              <input
+                className="input"
+                placeholder="+15551234567"
+                value={form.signalwire_number}
+                onChange={(e) => setForm({ ...form, signalwire_number: e.target.value })}
               />
             </div>
 

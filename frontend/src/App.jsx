@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import { MessageSquare, Megaphone, Users, BarChart3, Settings as SettingsIcon, ChevronDown, Zap, LogOut, User } from 'lucide-react'
-import { getMe, getProvider, setProvider as setProviderApi, getDailyCount } from './api'
+import { getMe, getUsers, getProvider, setProvider as setProviderApi, getDailyCount, setViewAsUser } from './api'
 import Login from './pages/Login'
 import Inbox from './pages/Inbox'
 import Campaigns from './pages/Campaigns'
@@ -20,6 +20,9 @@ function App() {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [dailyCount, setDailyCount] = useState({ count: 0, limit: 4000 })
   const [devMode, setDevMode] = useState(false)
+  const [allUsers, setAllUsers] = useState([])
+  const [viewAs, setViewAs] = useState('all')
+  const [viewAsOpen, setViewAsOpen] = useState(false)
 
   useEffect(() => {
     // Check URL for auth errors
@@ -49,9 +52,18 @@ function App() {
     if (!currentUser) return
     getProvider().then(r => setActiveProvider(r.provider))
     getDailyCount().then(setDailyCount).catch(() => {})
+    if (currentUser.role === 'admin') {
+      getUsers().then(setAllUsers).catch(() => {})
+    }
     const interval = setInterval(() => getDailyCount().then(setDailyCount).catch(() => {}), 30000)
     return () => clearInterval(interval)
   }, [currentUser])
+
+  const handleViewAs = (userId) => {
+    setViewAs(userId)
+    setViewAsUser(userId === 'all' ? null : userId)
+    setViewAsOpen(false)
+  }
 
   if (authLoading) {
     return (
@@ -107,6 +119,46 @@ function App() {
           </nav>
         </div>
         <div className="top-nav-right">
+          {currentUser.role === 'admin' && (
+            <div style={{ position: 'relative' }}>
+              <button
+                className="btn btn-sm"
+                onClick={() => { setViewAsOpen(!viewAsOpen); setProviderOpen(false); setUserMenuOpen(false) }}
+                style={{
+                  background: viewAs !== 'all' ? '#EDE5F5' : '#F5F5F5',
+                  color: viewAs !== 'all' ? '#7C5CAF' : '#666',
+                  border: '1px solid #E5E5E5', fontSize: 12, fontWeight: 500,
+                }}
+              >
+                Viewing: {viewAs === 'all' ? 'All Reps' : allUsers.find(u => u.id === viewAs)?.name || 'All'}
+                <ChevronDown size={12} />
+              </button>
+              {viewAsOpen && (
+                <div style={{
+                  position: 'absolute', right: 0, top: 34, minWidth: 180,
+                  background: '#FFF', border: '1px solid #E5E5E5', borderRadius: 8,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 200, overflow: 'hidden',
+                }}>
+                  <div onClick={() => handleViewAs('all')} style={{
+                    padding: '8px 14px', cursor: 'pointer', fontSize: 13, fontWeight: viewAs === 'all' ? 600 : 400,
+                    background: viewAs === 'all' ? '#EDE5F5' : 'transparent', color: viewAs === 'all' ? '#7C5CAF' : '#1A1A1A',
+                    borderBottom: '1px solid #E5E5E5',
+                  }}>All Reps</div>
+                  {allUsers.map(u => (
+                    <div key={u.id} onClick={() => handleViewAs(u.id)} style={{
+                      padding: '8px 14px', cursor: 'pointer', fontSize: 13,
+                      fontWeight: viewAs === u.id ? 600 : 400,
+                      background: viewAs === u.id ? '#EDE5F5' : 'transparent',
+                      color: viewAs === u.id ? '#7C5CAF' : '#1A1A1A',
+                    }}
+                      onMouseEnter={e => { if (viewAs !== u.id) e.currentTarget.style.background = '#FAFAFA' }}
+                      onMouseLeave={e => { if (viewAs !== u.id) e.currentTarget.style.background = 'transparent' }}
+                    >{u.name}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div className="daily-counter">
             <Zap size={14} />
             <span>{dailyCount.count} / {dailyCount.limit} today</span>

@@ -1,7 +1,16 @@
 const BASE = '/api';
 
+let _viewAsUser = null;
+export const setViewAsUser = (userId) => { _viewAsUser = userId; };
+export const getViewAsUser = () => _viewAsUser;
+
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
+  let url = `${BASE}${path}`;
+  if (_viewAsUser) {
+    const sep = url.includes('?') ? '&' : '?';
+    url += `${sep}view_as_user=${_viewAsUser}`;
+  }
+  const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   });
