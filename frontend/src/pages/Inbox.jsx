@@ -6,7 +6,7 @@ import {
 import {
   getConversations, getMessages, sendSMS, addNote,
   assignConversation, starConversation, setConversationStatus,
-  getTeamMembers, getTemplates
+  getUsers, getTemplates
 } from '../api'
 
 function segmentInfo(text) {
@@ -33,7 +33,7 @@ function formatTime(dateStr) {
 const EMOJI_LIST = ['👍', '👋', '😊', '🎉', '✅', '❤️', '🙏', '😂', '🔥', '💯']
 const MERGE_VARS = ['{name}', '{first_name}', '{last_name}', '{business}', '{email}']
 
-export default function Inbox({ provider }) {
+export default function Inbox({ provider, currentUser }) {
   const [conversations, setConversations] = useState([])
   const [activeConvo, setActiveConvo] = useState(null)
   const [messages, setMessages] = useState([])
@@ -53,11 +53,9 @@ export default function Inbox({ provider }) {
   const [showTemplates, setShowTemplates] = useState(false)
   const bottomRef = useRef(null)
   const msgInputRef = useRef(null)
-  const currentUser = 'Me'
-
   // Load team members and templates once
   useEffect(() => {
-    getTeamMembers().then(setTeamMembers).catch(() => {})
+    getUsers().then(setTeamMembers).catch(() => {})
     getTemplates().then(data => setTemplates(Array.isArray(data) ? data : data.templates || [])).catch(() => {})
   }, [])
 
@@ -70,13 +68,12 @@ export default function Inbox({ provider }) {
       else if (filter === 'starred') params.filter = 'starred'
       else if (filter === 'mine') {
         params.filter = 'assigned'
-        const moise = teamMembers.find(m => m.name === 'Moise')
-        if (moise) params.assigned_to = moise.id
+        if (currentUser) params.assigned_to = currentUser.id
       }
       const data = await getConversations(params)
       setConversations(Array.isArray(data) ? data : [])
     } catch { /* silent */ }
-  }, [filter, teamMembers])
+  }, [filter, teamMembers, currentUser])
 
   useEffect(() => {
     loadConversations()
@@ -122,7 +119,7 @@ export default function Inbox({ provider }) {
 
   const handleAddNote = async () => {
     if (!noteText.trim() || !activeConvo) return
-    await addNote(activeConvo.id, { body: noteText, sender_name: currentUser })
+    await addNote(activeConvo.id, { body: noteText })
     setNoteText('')
     const data = await getMessages(activeConvo.id)
     setMessages(Array.isArray(data) ? data : [])
@@ -139,7 +136,7 @@ export default function Inbox({ provider }) {
 
   const handleAssign = async (memberId) => {
     if (!activeConvo) return
-    await assignConversation(activeConvo.id, { assigned_to: memberId || null, assigned_by: 'Moise' })
+    await assignConversation(activeConvo.id, { assigned_to: memberId || null })
     setShowAssignDropdown(false)
     loadConversations()
   }

@@ -17,10 +17,10 @@ import {
   createTemplate,
   updateTemplate,
   deleteTemplate,
-  getTeamMembers,
-  createTeamMember,
-  updateTeamMember,
-  deleteTeamMember,
+  getUsers,
+  createUser,
+  updateUser,
+  deleteUser,
   getProvider,
   setProvider,
 } from '../api'
@@ -54,7 +54,7 @@ function maskString(str) {
 
 // ─── Templates Section ──────────────────────────────────────────────
 
-function TemplatesSection() {
+function TemplatesSection({ currentUser }) {
   const [templates, setTemplates] = useState([])
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState('all')
@@ -69,7 +69,7 @@ function TemplatesSection() {
   const loadTemplates = async () => {
     const params = {}
     if (search) params.search = search
-    if (tab === 'mine') params.owner = 'Moise'
+    if (tab === 'mine') params.owner = 'mine'
     const data = await getTemplates(params)
     setTemplates(data)
   }
@@ -97,7 +97,7 @@ function TemplatesSection() {
       await createTemplate({
         title: form.title,
         body: form.body,
-        owner: 'Moise',
+        owner: currentUser.name,
         shared: form.shared,
       })
     }
@@ -288,45 +288,45 @@ function TemplatesSection() {
 
 // ─── Team Members Section ───────────────────────────────────────────
 
-function TeamSection() {
+function TeamSection({ currentUser }) {
   const [members, setMembers] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
-  const [form, setForm] = useState({ name: '', role: 'rep' })
+  const [form, setForm] = useState({ name: '', email: '', role: 'rep' })
 
   useEffect(() => {
     loadMembers()
   }, [])
 
   const loadMembers = async () => {
-    const data = await getTeamMembers()
+    const data = await getUsers()
     setMembers(data)
   }
 
   const openCreate = () => {
     setEditing(null)
-    setForm({ name: '', role: 'rep' })
+    setForm({ name: '', email: '', role: 'rep' })
     setShowModal(true)
   }
 
   const openEdit = (member) => {
     setEditing(member)
-    setForm({ name: member.name, role: member.role })
+    setForm({ name: member.name, email: member.email || '', role: member.role })
     setShowModal(true)
   }
 
   const handleSave = async () => {
     if (editing) {
-      await updateTeamMember(editing.id, { name: form.name, role: form.role })
+      await updateUser(editing.id, { name: form.name, email: form.email, role: form.role })
     } else {
-      await createTeamMember({ name: form.name, role: form.role })
+      await createUser({ name: form.name, email: form.email, role: form.role })
     }
     setShowModal(false)
     loadMembers()
   }
 
   const handleDelete = async (id) => {
-    await deleteTeamMember(id)
+    await deleteUser(id)
     loadMembers()
   }
 
@@ -334,9 +334,11 @@ function TeamSection() {
     <>
       <div className="page-header">
         <h2>Team Members</h2>
-        <button className="btn btn-primary" onClick={openCreate}>
-          <Plus size={14} /> Add Member
-        </button>
+        {currentUser.role === 'admin' && (
+          <button className="btn btn-primary" onClick={openCreate}>
+            <Plus size={14} /> Add Member
+          </button>
+        )}
       </div>
 
       {members.length === 0 ? (
@@ -350,6 +352,7 @@ function TeamSection() {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Email</th>
                 <th>Role</th>
                 <th>Actions</th>
               </tr>
@@ -358,6 +361,7 @@ function TeamSection() {
               {members.map((m) => (
                 <tr key={m.id}>
                   <td>{m.name}</td>
+                  <td>{m.email}</td>
                   <td>
                     <span className="tag">
                       {m.role === 'admin' ? (
@@ -377,12 +381,14 @@ function TeamSection() {
                       >
                         <Edit2 size={14} />
                       </button>
-                      <button
-                        className="btn btn-sm btn-danger"
-                        onClick={() => handleDelete(m.id)}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {currentUser.role === 'admin' && (
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => handleDelete(m.id)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -421,6 +427,17 @@ function TeamSection() {
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="Full name"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Email</label>
+              <input
+                className="input"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="Email address"
               />
             </div>
 
@@ -532,7 +549,7 @@ function AccountSection({ provider }) {
 
 // ─── Main Settings Page ─────────────────────────────────────────────
 
-export default function Settings({ provider }) {
+export default function Settings({ provider, currentUser }) {
   const [section, setSection] = useState('templates')
 
   return (
@@ -555,8 +572,8 @@ export default function Settings({ provider }) {
       </div>
 
       <div className="page-content">
-        {section === 'templates' && <TemplatesSection />}
-        {section === 'team' && <TeamSection />}
+        {section === 'templates' && <TemplatesSection currentUser={currentUser} />}
+        {section === 'team' && <TeamSection currentUser={currentUser} />}
         {section === 'account' && <AccountSection provider={provider} />}
       </div>
     </div>

@@ -2,31 +2,36 @@ import os
 import csv
 import io
 import re
+import secrets
 import threading
 import time
 from datetime import datetime, timezone, date, timedelta
+from urllib.parse import urlencode
 
 import requests as http_requests
 from requests.auth import HTTPBasicAuth
 
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify, send_from_directory, Response
+from flask import Flask, request, jsonify, send_from_directory, Response, session, redirect
 from flask_cors import CORS
 from twilio.rest import Client as TwilioClient
 
-from models import (db, Setting, TeamMember, Contact, ContactImport,
+from models import (db, Setting, User, Contact, ContactImport,
                      Conversation, ConversationEvent, Message, Template,
                      Campaign, BlastMessage, DailyMessageCount)
 
 load_dotenv()
 
 app = Flask(__name__, static_folder='frontend/dist', static_url_path='')
-app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-secret')
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-secret-change-in-production')
 db_url = os.getenv('DATABASE_URL', 'sqlite:///sms_platform.db')
 if db_url == 'sqlite:///sms_platform.db' and os.path.exists('/tmp'):
     db_url = 'sqlite:////tmp/sms_platform.db'
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
 CORS(app)
 db.init_app(app)
@@ -40,14 +45,34 @@ SW_TOKEN = os.getenv('SIGNALWIRE_API_TOKEN')
 SW_SPACE = os.getenv('SIGNALWIRE_SPACE_URL')
 SW_PHONE = os.getenv('SIGNALWIRE_PHONE_NUMBER')
 
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', 'placeholder')
+GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', 'placeholder')
+GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI',
+    'http://localhost:5000/auth/google/callback')
+
 tw_client = TwilioClient(TWILIO_SID, TWILIO_TOKEN)
 
-TEAM_MEMBERS = [
-    ('Moise', 'admin'), ('Rob Harper', 'rep'), ('Matthew Walker', 'rep'),
-    ('Stanley Paul', 'rep'), ('Eric Smith', 'rep'), ('Jack Baker', 'rep'),
-    ('Joey Price', 'rep'), ('Eli Coleman', 'rep'), ('Alex Warren', 'rep'),
-    ('Mark Anderson', 'rep'),
+SEED_USERS = [
+    ('Moise Elinhorne', 'info@stellaradvancegroup.com', 'admin'),
+    ('Rob Harper', None, 'user'),
+    ('Matthew Walker', None, 'user'),
+    ('Stanley Paul', None, 'user'),
+    ('Eric Smith', None, 'user'),
+    ('Jack Baker', None, 'user'),
+    ('Joey Price', None, 'user'),
+    ('Eli Coleman', None, 'user'),
+    ('Alex Warren', None, 'user'),
+    ('Mark Anderson', None, 'user'),
 ]
+
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+def get_current_user():
+    uid = session.get('user_id')
+    if not uid:
+        return None
+    return User.query.get(uid)
 
 
 def normalize_phone(phone):
@@ -104,6 +129,119 @@ def _increment_daily_count(provider):
         db.session.add(DailyMessageCount(date=today, provider=provider, count=1))
 
 
+# ─── Auth middleware ─────────────────────────────────────────────────────────
+
+@app.before_request
+def require_auth():
+    path = request.path
+    if path.startswith('/auth/'):
+        return
+    if path.startswith('/api/sms/twilio/webhook'):
+        return
+    if path.startswith('/api/sms/signalwire/webhook'):
+        return
+    if path.startswith('/api/sms/status'):
+        return
+    if not path.startswith('/api/'):
+        return
+    if path == '/api/auth/me':
+        return
+    if 'user_id' not in session:
+        return jsonify({'error': 'Authentication required'}), 401
+
+
+# ─── Google OAuth ────────────────────────────────────────────────────────────
+
+@app.route('/auth/google')
+def google_login():
+    state = secrets.token_urlsafe(32)
+    session['oauth_state'] = state
+    params = {
+        'client_id': GOOGLE_CLIENT_ID,
+        'redirect_uri': GOOGLE_REDIRECT_URI,
+        'response_type': 'code',
+        'scope': 'openid email profile',
+        'state': state,
+        'access_type': 'offline',
+        'prompt': 'select_account',
+    }
+    return redirect(f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}")
+
+
+@app.route('/auth/google/callback')
+def google_callback():
+    if request.args.get('error'):
+        return redirect('/?auth_error=cancelled')
+
+    if request.args.get('state') != session.pop('oauth_state', None):
+        return redirect('/?auth_error=invalid_state')
+
+    code = request.args.get('code')
+    if not code:
+        return redirect('/?auth_error=no_code')
+
+    token_resp = http_requests.post('https://oauth2.googleapis.com/token', data={
+        'code': code,
+        'client_id': GOOGLE_CLIENT_ID,
+        'client_secret': GOOGLE_CLIENT_SECRET,
+        'redirect_uri': GOOGLE_REDIRECT_URI,
+        'grant_type': 'authorization_code',
+    })
+    if token_resp.status_code != 200:
+        return redirect('/?auth_error=token_failed')
+
+    token_data = token_resp.json()
+    userinfo_resp = http_requests.get(
+        'https://www.googleapis.com/oauth2/v2/userinfo',
+        headers={'Authorization': f'Bearer {token_data["access_token"]}'}
+    )
+    if userinfo_resp.status_code != 200:
+        return redirect('/?auth_error=userinfo_failed')
+
+    userinfo = userinfo_resp.json()
+    email = userinfo.get('email', '').lower().strip()
+
+    user = User.query.filter(db.func.lower(User.email) == email).first()
+    if not user:
+        return redirect('/?auth_error=access_denied')
+
+    user.avatar_url = userinfo.get('picture', '')
+    user.last_login = datetime.now(timezone.utc)
+    if userinfo.get('name') and not user.name:
+        user.name = userinfo['name']
+    db.session.commit()
+
+    session.permanent = True
+    session['user_id'] = user.id
+    return redirect('/')
+
+
+@app.route('/auth/dev-login/<int:user_id>')
+def dev_login(user_id):
+    if GOOGLE_CLIENT_ID != 'placeholder':
+        return jsonify({'error': 'Dev login disabled'}), 403
+    user = User.query.get_or_404(user_id)
+    session.permanent = True
+    session['user_id'] = user.id
+    user.last_login = datetime.now(timezone.utc)
+    db.session.commit()
+    return redirect('/')
+
+
+@app.route('/auth/logout')
+def logout():
+    session.clear()
+    return redirect('/')
+
+
+@app.route('/api/auth/me')
+def auth_me():
+    user = get_current_user()
+    if not user:
+        return jsonify({'authenticated': False}), 401
+    return jsonify({**user.to_dict(), 'authenticated': True})
+
+
 # ─── Settings ────────────────────────────────────────────────────────────────
 
 @app.route('/api/settings/provider', methods=['GET'])
@@ -124,39 +262,68 @@ def set_provider():
     return jsonify({'provider': provider})
 
 
-# ─── Team Members ────────────────────────────────────────────────────────────
+# ─── Users (replaces team-members) ──────────────────────────────────────────
 
-@app.route('/api/team-members', methods=['GET'])
-def list_team_members():
-    members = TeamMember.query.order_by(TeamMember.name).all()
-    return jsonify([m.to_dict() for m in members])
+@app.route('/api/users', methods=['GET'])
+def list_users():
+    users = User.query.order_by(User.name).all()
+    return jsonify([u.to_dict() for u in users])
 
 
-@app.route('/api/team-members', methods=['POST'])
-def create_team_member():
+@app.route('/api/users', methods=['POST'])
+def create_user():
+    current = get_current_user()
+    if not current or current.role != 'admin':
+        return jsonify({'error': 'Admin only'}), 403
     data = request.json
-    m = TeamMember(name=data['name'], role=data.get('role', 'rep'))
-    db.session.add(m)
+    email = data.get('email', '').lower().strip() or None
+    if email:
+        existing = User.query.filter(db.func.lower(User.email) == email).first()
+        if existing:
+            return jsonify({'error': 'Email already exists'}), 400
+    u = User(name=data['name'], email=email, role=data.get('role', 'user'))
+    db.session.add(u)
     db.session.commit()
-    return jsonify(m.to_dict()), 201
+    return jsonify(u.to_dict()), 201
 
 
-@app.route('/api/team-members/<int:mid>', methods=['PUT'])
-def update_team_member(mid):
-    m = TeamMember.query.get_or_404(mid)
+@app.route('/api/users/<int:uid>', methods=['PUT'])
+def update_user(uid):
+    current = get_current_user()
+    if not current or current.role != 'admin':
+        return jsonify({'error': 'Admin only'}), 403
+    u = User.query.get_or_404(uid)
     data = request.json
-    m.name = data.get('name', m.name)
-    m.role = data.get('role', m.role)
+    if 'name' in data:
+        u.name = data['name']
+    if 'email' in data:
+        email = data['email'].lower().strip() if data['email'] else None
+        if email:
+            dup = User.query.filter(db.func.lower(User.email) == email, User.id != uid).first()
+            if dup:
+                return jsonify({'error': 'Email already exists'}), 400
+        u.email = email
+    if 'role' in data:
+        u.role = data['role']
     db.session.commit()
-    return jsonify(m.to_dict())
+    return jsonify(u.to_dict())
 
 
-@app.route('/api/team-members/<int:mid>', methods=['DELETE'])
-def delete_team_member(mid):
-    m = TeamMember.query.get_or_404(mid)
-    db.session.delete(m)
+@app.route('/api/users/<int:uid>', methods=['DELETE'])
+def delete_user(uid):
+    current = get_current_user()
+    if not current or current.role != 'admin':
+        return jsonify({'error': 'Admin only'}), 403
+    u = User.query.get_or_404(uid)
+    db.session.delete(u)
     db.session.commit()
     return jsonify({'ok': True})
+
+
+# backward compat alias
+@app.route('/api/team-members', methods=['GET'])
+def list_team_members():
+    return list_users()
 
 
 # ─── Daily Count ─────────────────────────────────────────────────────────────
@@ -390,7 +557,7 @@ def list_conversations():
 
 @app.route('/api/conversations/<int:cid>/messages', methods=['GET'])
 def get_messages(cid):
-    convo = Conversation.query.get_or_404(cid)
+    Conversation.query.get_or_404(cid)
     msgs = Message.query.filter_by(conversation_id=cid).order_by(Message.created_at.asc()).all()
     events = ConversationEvent.query.filter_by(conversation_id=cid).all()
     result = [m.to_dict() for m in msgs]
@@ -405,10 +572,11 @@ def assign_conversation(cid):
     convo = Conversation.query.get_or_404(cid)
     data = request.json
     member_id = data.get('assigned_to')
-    assigned_by = data.get('assigned_by', 'Moise')
+    current = get_current_user()
+    assigned_by = current.name if current else 'System'
 
     convo.assigned_to = member_id
-    member = TeamMember.query.get(member_id) if member_id else None
+    member = User.query.get(member_id) if member_id else None
     name = member.name if member else 'Unassigned'
 
     event = ConversationEvent(
@@ -446,6 +614,7 @@ def send_single_sms():
     to = normalize_phone(data['to'])
     body = data['body']
     provider = data.get('provider')
+    current = get_current_user()
 
     try:
         sid, used_provider = send_sms(to, body, provider)
@@ -464,6 +633,8 @@ def send_single_sms():
     msg = Message(
         conversation_id=convo.id, direction='outbound',
         body=body, provider=used_provider, status='sent', sid=sid,
+        sender_name=current.name if current else '',
+        sender_id=current.id if current else None,
     )
     db.session.add(msg)
     convo.last_message = body
@@ -474,18 +645,22 @@ def send_single_sms():
 
 @app.route('/api/conversations/<int:cid>/notes', methods=['POST'])
 def add_note(cid):
-    convo = Conversation.query.get_or_404(cid)
+    Conversation.query.get_or_404(cid)
     data = request.json
+    current = get_current_user()
     msg = Message(
         conversation_id=cid, direction='internal', body=data['body'],
-        is_note=True, sender_name=data.get('sender_name', 'Moise'), status='note',
+        is_note=True,
+        sender_name=current.name if current else data.get('sender_name', ''),
+        sender_id=current.id if current else None,
+        status='note',
     )
     db.session.add(msg)
     db.session.commit()
     return jsonify(msg.to_dict()), 201
 
 
-# ─── Webhooks ────────────────────────────────────────────────────────────────
+# ─── Webhooks (no auth required) ────────────────────────────────────────────
 
 @app.route('/api/sms/twilio/webhook', methods=['POST'])
 def twilio_webhook():
@@ -557,24 +732,31 @@ def sms_status_callback():
 @app.route('/api/templates', methods=['GET'])
 def list_templates():
     q = request.args.get('search', '')
-    owner = request.args.get('owner', '')
+    owner_filter = request.args.get('owner', '')
+    current = get_current_user()
     query = Template.query
     if q:
         like = f'%{q}%'
         query = query.filter(db.or_(Template.title.ilike(like), Template.body.ilike(like)))
-    if owner:
-        query = query.filter(Template.owner == owner)
+    if owner_filter == 'mine' and current:
+        query = query.filter(Template.owner_id == current.id)
     else:
-        query = query.filter(db.or_(Template.shared == True, Template.owner == 'Moise'))
+        if current:
+            query = query.filter(db.or_(Template.shared == True, Template.owner_id == current.id))
+        else:
+            query = query.filter(Template.shared == True)
     return jsonify([t.to_dict() for t in query.order_by(Template.created_at.desc()).all()])
 
 
 @app.route('/api/templates', methods=['POST'])
 def create_template():
     data = request.json
+    current = get_current_user()
     t = Template(
         title=data['title'], body=data['body'],
-        owner=data.get('owner', 'Moise'), shared=data.get('shared', True),
+        owner=current.name if current else '',
+        owner_id=current.id if current else None,
+        shared=data.get('shared', True),
     )
     db.session.add(t)
     db.session.commit()
@@ -617,6 +799,7 @@ def get_campaign(cid):
 @app.route('/api/campaigns', methods=['POST'])
 def create_campaign():
     data = request.json
+    current = get_current_user()
     tags = ','.join(data.get('tags', [])) if isinstance(data.get('tags'), list) else data.get('tags', '')
     c = Campaign(
         name=data['name'], message_template=data['message_template'], tags=tags,
@@ -624,6 +807,7 @@ def create_campaign():
         campaign_type=data.get('campaign_type', 'one_time'),
         scheduled_at=datetime.fromisoformat(data['scheduled_at']) if data.get('scheduled_at') else None,
         frequency=data.get('frequency'),
+        created_by=current.id if current else None,
     )
     db.session.add(c)
     db.session.commit()
@@ -746,6 +930,7 @@ def export_campaign(cid):
 def analytics():
     start = request.args.get('start_date', '')
     end = request.args.get('end_date', '')
+    end_dt = None
 
     msg_query = Message.query
     if start:
@@ -773,12 +958,6 @@ def analytics():
     total_delivered = tw['delivered'] + sw['delivered']
     engagement = round((total_received / total_sent * 100), 1) if total_sent > 0 else 0
 
-    blast_query = BlastMessage.query
-    if start:
-        blast_query = blast_query.filter(BlastMessage.created_at >= datetime.fromisoformat(start))
-    if end:
-        blast_query = blast_query.filter(BlastMessage.created_at < end_dt)
-
     campaigns_sent = db.session.query(Campaign.id).filter(Campaign.status.in_(['sending', 'completed'])).count()
 
     return jsonify({
@@ -798,24 +977,25 @@ def analytics():
 def analytics_team():
     start = request.args.get('start_date', '')
     end = request.args.get('end_date', '')
-    members = TeamMember.query.all()
+    users = User.query.all()
     result = []
-    for m in members:
-        convos = Conversation.query.filter_by(assigned_to=m.id).all()
+    for u in users:
+        convos = Conversation.query.filter_by(assigned_to=u.id).all()
         cids = [c.id for c in convos]
         if not cids:
-            result.append({'name': m.name, 'role': m.role, 'sent': 0, 'delivered': 0, 'failed': 0, 'received': 0})
+            result.append({'name': u.name, 'role': u.role, 'sent': 0, 'delivered': 0, 'failed': 0, 'received': 0,
+                           'delivered_rate': 0, 'failed_rate': 0})
             continue
         q = Message.query.filter(Message.conversation_id.in_(cids))
         if start: q = q.filter(Message.created_at >= datetime.fromisoformat(start))
         if end: q = q.filter(Message.created_at < datetime.fromisoformat(end) + timedelta(days=1))
         msgs = q.all()
-        sent = sum(1 for m2 in msgs if m2.direction == 'outbound')
-        delivered = sum(1 for m2 in msgs if m2.status == 'delivered')
-        failed = sum(1 for m2 in msgs if m2.status in ('failed', 'undelivered'))
-        received = sum(1 for m2 in msgs if m2.direction == 'inbound')
+        sent = sum(1 for m in msgs if m.direction == 'outbound')
+        delivered = sum(1 for m in msgs if m.status == 'delivered')
+        failed = sum(1 for m in msgs if m.status in ('failed', 'undelivered'))
+        received = sum(1 for m in msgs if m.direction == 'inbound')
         result.append({
-            'name': m.name, 'role': m.role,
+            'name': u.name, 'role': u.role,
             'sent': sent, 'delivered': delivered, 'failed': failed, 'received': received,
             'delivered_rate': round(delivered / sent * 100, 1) if sent > 0 else 0,
             'failed_rate': round(failed / sent * 100, 1) if sent > 0 else 0,
@@ -825,19 +1005,19 @@ def analytics_team():
 
 @app.route('/api/analytics/export', methods=['GET'])
 def export_analytics():
-    members = TeamMember.query.all()
+    users = User.query.all()
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['Name', 'Role', 'Sent', 'Delivered', 'Failed', 'Received'])
-    for m in members:
-        convos = Conversation.query.filter_by(assigned_to=m.id).all()
+    for u in users:
+        convos = Conversation.query.filter_by(assigned_to=u.id).all()
         cids = [c.id for c in convos]
         if not cids:
-            writer.writerow([m.name, m.role, 0, 0, 0, 0])
+            writer.writerow([u.name, u.role, 0, 0, 0, 0])
             continue
         msgs = Message.query.filter(Message.conversation_id.in_(cids)).all()
         writer.writerow([
-            m.name, m.role,
+            u.name, u.role,
             sum(1 for x in msgs if x.direction == 'outbound'),
             sum(1 for x in msgs if x.status == 'delivered'),
             sum(1 for x in msgs if x.status in ('failed', 'undelivered')),
@@ -859,18 +1039,18 @@ def serve_frontend(path):
 
 # ─── Init DB + Seed ──────────────────────────────────────────────────────────
 
-def _seed_team():
-    if TeamMember.query.count() == 0:
-        for name, role in TEAM_MEMBERS:
-            db.session.add(TeamMember(name=name, role=role))
+def _seed_users():
+    if User.query.count() == 0:
+        for name, email, role in SEED_USERS:
+            db.session.add(User(name=name, email=email, role=role))
         db.session.commit()
-        print("Seeded team members")
+        print("Seeded users")
 
 
 with app.app_context():
     try:
         db.create_all()
-        _seed_team()
+        _seed_users()
         print(f"Database initialized at {db_url}")
     except Exception as e:
         print(f"Database initialization error: {e}")

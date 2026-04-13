@@ -13,6 +13,18 @@ async function request(path, options = {}) {
   return res.json();
 }
 
+// Auth
+export const getMe = () => request('/auth/me');
+
+// Users
+export const getUsers = () => request('/users');
+export const createUser = (data) =>
+  request('/users', { method: 'POST', body: JSON.stringify(data) });
+export const updateUser = (id, data) =>
+  request(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteUser = (id) =>
+  request(`/users/${id}`, { method: 'DELETE' });
+
 // Settings
 export const getProvider = () => request('/settings/provider');
 export const setProvider = (provider) =>

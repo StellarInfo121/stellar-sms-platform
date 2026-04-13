@@ -10,15 +10,23 @@ class Setting(db.Model):
     value = db.Column(db.String(500), nullable=False)
 
 
-class TeamMember(db.Model):
-    __tablename__ = 'team_members'
+class User(db.Model):
+    __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
-    role = db.Column(db.String(50), default='rep')
+    email = db.Column(db.String(200), unique=True, nullable=True)
+    role = db.Column(db.String(50), default='user')
+    avatar_url = db.Column(db.String(500), default='')
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    last_login = db.Column(db.DateTime, nullable=True)
 
     def to_dict(self):
-        return {'id': self.id, 'name': self.name, 'role': self.role}
+        return {
+            'id': self.id, 'name': self.name, 'email': self.email or '',
+            'role': self.role, 'avatar_url': self.avatar_url or '',
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'last_login': self.last_login.isoformat() if self.last_login else None,
+        }
 
 
 class Contact(db.Model):
@@ -74,12 +82,12 @@ class Conversation(db.Model):
     contact_name = db.Column(db.String(200), default='')
     last_message = db.Column(db.Text, default='')
     last_message_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    assigned_to = db.Column(db.Integer, db.ForeignKey('team_members.id'), nullable=True)
+    assigned_to = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     starred = db.Column(db.Boolean, default=False)
     status = db.Column(db.String(20), default='open')
     messages = db.relationship('Message', backref='conversation', lazy='dynamic')
     events = db.relationship('ConversationEvent', backref='conversation', lazy='dynamic')
-    assignee = db.relationship('TeamMember', foreign_keys=[assigned_to])
+    assignee = db.relationship('User', foreign_keys=[assigned_to])
 
     def to_dict(self):
         return {
@@ -122,6 +130,7 @@ class Message(db.Model):
     sid = db.Column(db.String(100), default='')
     is_note = db.Column(db.Boolean, default=False)
     sender_name = db.Column(db.String(200), default='')
+    sender_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
@@ -130,6 +139,7 @@ class Message(db.Model):
             'direction': self.direction, 'body': self.body,
             'provider': self.provider, 'status': self.status,
             'is_note': self.is_note, 'sender_name': self.sender_name,
+            'sender_id': self.sender_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -139,14 +149,15 @@ class Template(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     body = db.Column(db.Text, nullable=False)
-    owner = db.Column(db.String(200), default='Moise')
+    owner = db.Column(db.String(200), default='')
+    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     shared = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
         return {
             'id': self.id, 'title': self.title, 'body': self.body,
-            'owner': self.owner, 'shared': self.shared,
+            'owner': self.owner, 'owner_id': self.owner_id, 'shared': self.shared,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -167,6 +178,7 @@ class Campaign(db.Model):
     delivered_count = db.Column(db.Integer, default=0)
     failed_count = db.Column(db.Integer, default=0)
     replied_count = db.Column(db.Integer, default=0)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
