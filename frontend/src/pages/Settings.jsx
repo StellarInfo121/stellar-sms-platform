@@ -374,15 +374,15 @@ function TeamSection({ currentUser }) {
                   <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{m.twilio_number || '--'}</td>
                   <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{m.signalwire_number || '--'}</td>
                   <td>
-                    <span className="tag">
-                      {m.role === 'admin' ? (
-                        <>
-                          <Shield size={12} /> admin
-                        </>
-                      ) : (
-                        'rep'
-                      )}
-                    </span>
+                    <select
+                      className="input"
+                      value={m.role}
+                      onChange={async (e) => { await updateUser(m.id, { role: e.target.value }); loadMembers() }}
+                      style={{ width: 90, padding: '4px 8px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="user">Rep</option>
+                    </select>
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: 6 }}>
