@@ -149,7 +149,6 @@ def send_sms(to, body, provider=None, from_number=None):
         except Exception as e:
             print(f"[Twilio ERROR] code={getattr(e, 'code', '')} to={to} error={e}")
             raise
-    _increment_daily_count(provider)
     return sid, provider
 
 
@@ -295,7 +294,12 @@ def set_provider():
 
 @app.route('/api/users', methods=['GET'])
 def list_users():
-    return jsonify([u.to_dict() for u in User.query.order_by(User.name).all()])
+    current = get_current_user()
+    users = User.query.order_by(User.name).all()
+    if current and current.role == 'admin':
+        return jsonify([u.to_dict() for u in users])
+    # Non-admins get minimal info (for assign dropdowns)
+    return jsonify([{'id': u.id, 'name': u.name, 'role': u.role} for u in users])
 
 @app.route('/api/team-members', methods=['GET'])
 def list_team_members():
@@ -710,7 +714,6 @@ def _handle_inbound(from_, to_, body, sid, provider):
     db.session.add(msg)
     convo.last_message = body
     convo.last_message_at = datetime.now(timezone.utc)
-    _increment_daily_count(provider)
     db.session.commit()
 
     if rep_id:
@@ -881,6 +884,7 @@ def _run_blast(app, campaign_id, from_number):
                     bm.status = 'sent'
                     bm.sent_at = datetime.now(timezone.utc)
                     campaign.sent_count += 1
+                    _increment_daily_count(campaign.provider)
                 except Exception as e:
                     bm.status = 'failed'
                     bm.error_message = str(e)[:500]
@@ -1108,10 +1112,9 @@ def list_api_keys():
     current = get_current_user()
     if not current:
         return jsonify({'error': 'Auth required'}), 401
-    if current.role == 'admin':
-        keys = ApiKey.query.order_by(ApiKey.created_at.desc()).all()
-    else:
-        keys = ApiKey.query.filter_by(user_id=current.id).order_by(ApiKey.created_at.desc()).all()
+    if current.role != 'admin':
+        return jsonify({'error': 'Admin only'}), 403
+    keys = ApiKey.query.order_by(ApiKey.created_at.desc()).all()
     return jsonify([k.to_dict() for k in keys])
 
 
@@ -1120,6 +1123,8 @@ def create_api_key():
     current = get_current_user()
     if not current:
         return jsonify({'error': 'Auth required'}), 401
+    if current.role != 'admin':
+        return jsonify({'error': 'Admin only'}), 403
     data = request.json
     raw_key = 'sk_' + secrets.token_hex(16)
     ak = ApiKey(

@@ -161,25 +161,27 @@ function App() {
           )}
           <div className="daily-counter">
             <Zap size={14} />
-            <span>{dailyCount.count} / {dailyCount.limit} today</span>
+            <span>{dailyCount.count} / {dailyCount.limit} campaign msgs today</span>
           </div>
-          <div className="provider-selector-wrap">
-            <button className="provider-toggle" onClick={() => { setProviderOpen(!providerOpen); setUserMenuOpen(false) }}>
-              <span className={`dot ${provider}`} />
-              {provider === 'twilio' ? 'Twilio' : 'SignalWire'}
-              <ChevronDown size={14} />
-            </button>
-            {providerOpen && (
-              <div className="provider-dropdown">
-                <button className={`prov-opt ${provider === 'twilio' ? 'active' : ''}`} onClick={() => switchProvider('twilio')}>
-                  <span className="dot twilio" /> Twilio <span className="prov-phone">+1 (561) 468-3646</span>
-                </button>
-                <button className={`prov-opt ${provider === 'signalwire' ? 'active' : ''}`} onClick={() => switchProvider('signalwire')}>
-                  <span className="dot signalwire" /> SignalWire <span className="prov-phone">+1 (954) 501-2597</span>
-                </button>
-              </div>
-            )}
-          </div>
+          {currentUser.role === 'admin' && (
+            <div className="provider-selector-wrap">
+              <button className="provider-toggle" onClick={() => { setProviderOpen(!providerOpen); setUserMenuOpen(false) }}>
+                <span className={`dot ${provider}`} />
+                {provider === 'twilio' ? 'Twilio' : 'SignalWire'}
+                <ChevronDown size={14} />
+              </button>
+              {providerOpen && (
+                <div className="provider-dropdown">
+                  <button className={`prov-opt ${provider === 'twilio' ? 'active' : ''}`} onClick={() => switchProvider('twilio')}>
+                    <span className="dot twilio" /> Twilio <span className="prov-phone">+1 (561) 468-3646</span>
+                  </button>
+                  <button className={`prov-opt ${provider === 'signalwire' ? 'active' : ''}`} onClick={() => switchProvider('signalwire')}>
+                    <span className="dot signalwire" /> SignalWire <span className="prov-phone">+1 (954) 501-2597</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {/* User menu */}
           <div style={{ position: 'relative' }}>
             <button

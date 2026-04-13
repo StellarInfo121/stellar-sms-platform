@@ -30,12 +30,12 @@ import {
   revokeApiKey,
 } from '../api'
 
-const SECTIONS = [
+const ALL_SECTIONS = [
   { key: 'templates', label: 'Templates', icon: FileText },
-  { key: 'team', label: 'Team Members', icon: Users },
+  { key: 'team', label: 'Team Members', icon: Users, adminOnly: true },
   { key: 'account', label: 'Account', icon: Shield },
-  { key: 'apikeys', label: 'API Keys', icon: Key },
-  { key: 'apidocs', label: 'API Docs', icon: FileText },
+  { key: 'apikeys', label: 'API Keys', icon: Key, adminOnly: true },
+  { key: 'apidocs', label: 'API Docs', icon: FileText, adminOnly: true },
 ]
 
 const MERGE_VARS = ['{name}', '{first_name}', '{last_name}', '{business}']
@@ -785,6 +785,8 @@ function ApiDocsSection() {
 // ─── Main Settings Page ─────────────────────────────────────────────
 
 export default function Settings({ provider, currentUser }) {
+  const isAdmin = currentUser?.role === 'admin'
+  const sections = ALL_SECTIONS.filter(s => !s.adminOnly || isAdmin)
   const [section, setSection] = useState('templates')
 
   return (
@@ -794,7 +796,7 @@ export default function Settings({ provider, currentUser }) {
           <SettingsIcon size={18} style={{ verticalAlign: 'middle', marginRight: 6 }} />
           SETTINGS
         </h3>
-        {SECTIONS.map(({ key, label, icon: Icon }) => (
+        {sections.map(({ key, label, icon: Icon }) => (
           <div
             key={key}
             className={`sidebar-item ${section === key ? 'active' : ''}`}
@@ -808,10 +810,10 @@ export default function Settings({ provider, currentUser }) {
 
       <div className="page-content">
         {section === 'templates' && <TemplatesSection currentUser={currentUser} />}
-        {section === 'team' && <TeamSection currentUser={currentUser} />}
-        {section === 'account' && <AccountSection provider={provider} />}
-        {section === 'apikeys' && <ApiKeysSection />}
-        {section === 'apidocs' && <ApiDocsSection />}
+        {section === 'team' && isAdmin && <TeamSection currentUser={currentUser} />}
+        {section === 'account' && <AccountSection provider={provider} currentUser={currentUser} />}
+        {section === 'apikeys' && isAdmin && <ApiKeysSection />}
+        {section === 'apidocs' && isAdmin && <ApiDocsSection />}
       </div>
     </div>
   )
