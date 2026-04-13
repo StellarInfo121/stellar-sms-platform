@@ -100,15 +100,13 @@ def get_active_provider():
 
 
 def _get_from_number(user, provider):
-    """Get the FROM number for a user and provider. Raises if none assigned."""
+    """Get the FROM number for a user and provider. Falls back to company default."""
     if provider == 'signalwire':
-        num = user.signalwire_number if user else SW_PHONE
-        if not num:
-            raise Exception('No SignalWire number assigned. Contact admin.')
+        num = (user.signalwire_number if user else None) or SW_PHONE
     else:
-        num = user.twilio_number if user else TWILIO_PHONE
-        if not num:
-            raise Exception('No Twilio number assigned. Contact admin.')
+        num = (user.twilio_number if user else None) or TWILIO_PHONE
+    if not num:
+        raise Exception(f'No {provider} number configured. Contact admin.')
     return num
 
 
