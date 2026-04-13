@@ -19,7 +19,10 @@ load_dotenv()
 
 app = Flask(__name__, static_folder='frontend/dist', static_url_path='')
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-secret')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///sms_platform.db')
+db_url = os.getenv('DATABASE_URL', 'sqlite:///sms_platform.db')
+if db_url == 'sqlite:///sms_platform.db' and os.path.exists('/tmp'):
+    db_url = 'sqlite:////tmp/sms_platform.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 CORS(app)
@@ -477,7 +480,11 @@ def serve_frontend(path):
 # ─── Init DB ──────────────────────────────────────────────────────────────────
 
 with app.app_context():
-    db.create_all()
+    try:
+        db.create_all()
+        print(f"Database initialized at {db_url}")
+    except Exception as e:
+        print(f"Database initialization error: {e}")
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
