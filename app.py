@@ -53,7 +53,10 @@ def send_signalwire_sms(to, body, from_number):
     response = http_requests.post(url, data=data, auth=auth)
     result = response.json()
     if response.status_code >= 400:
-        raise Exception(result.get('message', f'SignalWire error {response.status_code}'))
+        code = result.get('code', response.status_code)
+        message = result.get('message', 'Unknown SignalWire error')
+        print(f"[SignalWire ERROR] code={code} status={response.status_code} to={to} message={message}")
+        raise Exception(f"SignalWire error {code}: {message}")
     return result.get('sid', '')
 
 
@@ -63,8 +66,13 @@ def send_sms(to, body, provider=None):
     if provider == 'signalwire':
         sid = send_signalwire_sms(to, body, SW_PHONE)
     else:
-        msg = tw_client.messages.create(to=to, from_=TWILIO_PHONE, body=body)
-        sid = msg.sid
+        try:
+            msg = tw_client.messages.create(to=to, from_=TWILIO_PHONE, body=body)
+            sid = msg.sid
+        except Exception as e:
+            code = getattr(e, 'code', '')
+            print(f"[Twilio ERROR] code={code} to={to} error={e}")
+            raise
     return sid, provider
 
 
@@ -204,7 +212,17 @@ def send_single_sms():
     body = data['body']
     provider = data.get('provider')
 
-    sid, used_provider = send_sms(to, body, provider)
+    try:
+        sid, used_provider = send_sms(to, body, provider)
+    except Exception as e:
+        error_msg = str(e)
+        error_code = ''
+        if hasattr(e, 'code'):
+            error_code = str(e.code)
+        elif hasattr(e, 'status'):
+            error_code = str(e.status)
+        print(f"[SMS SEND ERROR] provider={provider} to={to} error={error_msg}")
+        return jsonify({'error': error_msg, 'error_code': error_code}), 400
 
     convo = Conversation.query.filter_by(phone=to).first()
     if not convo:
