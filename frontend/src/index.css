@@ -1,8 +1,4 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
   --deep-purple: #281B39;
@@ -20,6 +16,8 @@
   --error: #f87171;
   --warning: #fbbf24;
   --info: #60a5fa;
+  --note-bg: #2d3a2d;
+  --note-border: #4a6a4a;
 }
 
 body {
@@ -29,21 +27,7 @@ body {
   min-height: 100vh;
 }
 
-#root {
-  display: flex;
-  min-height: 100vh;
-}
-
-button {
-  cursor: pointer;
-  font-family: inherit;
-}
-
-input, select, textarea {
-  font-family: inherit;
-}
-
-a {
-  color: var(--light-purple);
-  text-decoration: none;
-}
+#root { display: flex; flex-direction: column; min-height: 100vh; }
+button { cursor: pointer; font-family: inherit; }
+input, select, textarea { font-family: inherit; }
+a { color: var(--light-purple); text-decoration: none; }
